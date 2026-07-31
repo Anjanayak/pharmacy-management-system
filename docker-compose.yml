@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pharmacy_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pharmacy
+      POSTGRES_PASSWORD: pharmacy
+      POSTGRES_DB: pharmacy_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pharmacy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmacy -d pharmacy_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: pharmacy_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://pharmacy:pharmacy@db:5432/pharmacy_db
+      JWT_SECRET_KEY: change_this_secret_in_production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+volumes:
+  pharmacy_pgdata:
