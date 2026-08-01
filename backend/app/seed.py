@@ -21,11 +21,11 @@ def run():
 
         # ---- Users ----
         users = [
-            models.User(username="admin", email="admin@pharmacy.local", full_name="System Admin",
+            models.User(username="admin", email="admin@pharmacy-demo.com", full_name="System Admin",
                         role=models.UserRole.admin, hashed_password=hash_password("admin123")),
-            models.User(username="manager", email="manager@pharmacy.local", full_name="Store Manager",
+            models.User(username="manager", email="manager@pharmacy-demo.com", full_name="Store Manager",
                         role=models.UserRole.manager, hashed_password=hash_password("manager123")),
-            models.User(username="staff", email="staff@pharmacy.local", full_name="Pharmacy Staff",
+            models.User(username="staff", email="staff@pharmacy-demo.com", full_name="Pharmacy Staff",
                         role=models.UserRole.staff, hashed_password=hash_password("staff123")),
         ]
         db.add_all(users)
