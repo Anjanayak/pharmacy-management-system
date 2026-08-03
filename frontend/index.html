@@ -91,9 +91,14 @@
           <h3 style="margin-top:0">Catalog</h3>
           <input type="text" id="medicine-search" placeholder="Search by name or generic name...">
           <table id="medicines-table">
-            <thead><tr><th>Name</th><th>Generic</th><th>Category</th><th>Price</th><th>Stock</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Generic</th><th>Category</th><th>Price</th><th>Stock</th><th></th><th></th></tr></thead>
             <tbody></tbody>
           </table>
+          <div id="substitutes-result" class="msg-box" style="display:none"></div>
+          <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+            <button id="medicines-load-more" class="btn secondary" style="display:none">Load More</button>
+            <button class="btn secondary" onclick="exportMedicinesCsv()">Export CSV</button>
+          </div>
         </div>
 
         <div class="card" id="batch-panel" style="display:none">
@@ -130,6 +135,14 @@
             for pharmacist review below.
           </p>
           <div id="prescription-msg" class="msg-box" style="display:none"></div>
+
+          <label>Upload a prescription image (optional) — runs offline OCR and fills the text box below for your review</label>
+          <div class="item-row" style="margin-bottom:0.75rem">
+            <input type="file" id="prescription-image" accept="image/png,image/jpeg,image/webp" style="flex:2">
+            <button type="button" id="extract-text-btn" class="btn secondary">Extract Text from Image</button>
+          </div>
+          <div id="ocr-msg" class="msg-box" style="display:none"></div>
+
           <form id="prescription-form">
             <textarea id="prescription-text" rows="4" required placeholder="Paracetamol 500mg 1-0-1&#10;Aspirin 75mg OD"></textarea>
             <button type="submit" class="btn">Process with AI Assist</button>
@@ -243,8 +256,10 @@
             <button id="report-tab-expiry-loss" class="btn secondary" onclick="runReport('expiry-loss')">Expiry Loss</button>
             <button id="report-tab-daily-sales" class="btn secondary" onclick="runReport('daily-sales')">Daily Sales</button>
             <button id="report-tab-reorder-needs" class="btn secondary" onclick="runReport('reorder-needs')">Reorder Needs</button>
+            <button id="report-tab-pharmacist-workload" class="btn secondary" onclick="runReport('pharmacist-workload')">Pharmacist Workload</button>
           </div>
           <div id="report-output"></div>
+          <button class="btn secondary" style="margin-top:1rem" onclick="exportCurrentReportCsv()">Export CSV</button>
         </div>
       </div>
 

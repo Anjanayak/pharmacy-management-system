@@ -1,6 +1,7 @@
+import io
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from .. import schemas, models
@@ -9,6 +10,47 @@ from ..auth import get_current_user, require_roles
 from ..services import ai_service
 
 router = APIRouter(prefix="/api/prescriptions", tags=["Prescriptions"])
+
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB
+
+
+@router.post("/extract-text")
+async def extract_text_from_image(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager, models.UserRole.staff)),
+):
+    """
+    OCR step of AI Prescription Assist: runs Tesseract OCR (offline, no
+    external API) over an uploaded prescription image and returns the raw
+    extracted text for the pharmacist to review/edit before it is submitted
+    to POST /api/prescriptions, which then performs medicine/dosage/frequency
+    parsing and drug-interaction checking on that text.
+    """
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(400, f"Unsupported image type '{file.content_type}'. Use PNG, JPEG, or WEBP.")
+
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(400, "Image too large (max 8 MB).")
+
+    try:
+        import pytesseract
+        from PIL import Image
+
+        image = Image.open(io.BytesIO(contents))
+        extracted_text = pytesseract.image_to_string(image).strip()
+    except ImportError:
+        raise HTTPException(500, "OCR dependencies not installed on the server.")
+    except pytesseract.TesseractNotFoundError:
+        raise HTTPException(500, "Tesseract OCR engine not found on the server. Rebuild the backend image.")
+    except Exception as exc:
+        raise HTTPException(400, f"Could not read image: {exc}")
+
+    if not extracted_text:
+        extracted_text = ""
+
+    return {"extracted_text": extracted_text, "filename": file.filename}
 
 
 @router.get("", response_model=List[schemas.PrescriptionOut])

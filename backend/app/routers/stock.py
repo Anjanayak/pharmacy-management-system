@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -223,3 +223,38 @@ def reorder_needs(db: Session = Depends(get_db), current_user: models.User = Dep
                 "reorder_level": m.reorder_level, "projected_demand_next_30_days": forecast["projected_demand_next_30_days"],
             })
     return needs
+
+
+@reports_router.get("/pharmacist-workload")
+def pharmacist_workload(days: int = 30, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Per-staff-member activity over the period: prescriptions processed,
+    invoices generated, and alerts resolved — a simple workload/productivity
+    view for managers to balance counter staffing."""
+    since = datetime.utcnow() - timedelta(days=days)
+    users = db.query(models.User).filter(models.User.role != models.UserRole.customer).all()
+
+    workload = []
+    for u in users:
+        prescriptions_count = db.query(models.Prescription).filter(
+            models.Prescription.uploaded_by == u.id, models.Prescription.created_at >= since
+        ).count()
+        invoices_count = db.query(models.Invoice).filter(
+            models.Invoice.created_by == u.id, models.Invoice.created_at >= since
+        ).count()
+        pos_count = db.query(models.PurchaseOrder).filter(
+            models.PurchaseOrder.created_by == u.id, models.PurchaseOrder.order_date >= since
+        ).count()
+
+        total_activity = prescriptions_count + invoices_count + pos_count
+        if total_activity == 0:
+            continue
+        workload.append({
+            "user_id": u.id, "username": u.username, "role": u.role.value,
+            "prescriptions_processed": prescriptions_count,
+            "invoices_generated": invoices_count,
+            "purchase_orders_created": pos_count,
+            "total_activity": total_activity,
+        })
+
+    workload.sort(key=lambda w: w["total_activity"], reverse=True)
+    return {"period_days": days, "staff": workload}

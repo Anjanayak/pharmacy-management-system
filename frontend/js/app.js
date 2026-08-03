@@ -1,3 +1,27 @@
+function exportArrayAsCsv(rows, filename) {
+  if (!rows || rows.length === 0) {
+    alert("Nothing to export yet — load the data first.");
+    return;
+  }
+  const headers = Object.keys(rows[0]);
+  const escape = (val) => {
+    const s = val === null || val === undefined ? "" : String(val);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.join(",")]
+    .concat(rows.map((r) => headers.map((h) => escape(r[h])).join(",")))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // ---------- Screen switching ----------
 function showLogin() {
   document.getElementById("login-screen").style.display = "flex";
@@ -7,9 +31,38 @@ function showLogin() {
 function showApp() {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app-screen").style.display = "block";
+  const role = localStorage.getItem("pharmacy_role");
   document.getElementById("who-label").textContent =
-    `${localStorage.getItem("pharmacy_username")} (${localStorage.getItem("pharmacy_role")})`;
+    `${localStorage.getItem("pharmacy_username")} (${role})`;
+  applyRoleVisibility(role);
   navigate("dashboard");
+}
+
+// Elements only Admin/Manager may use, per backend RBAC (see auth.py require_roles
+// checks in each router). Hiding them for Staff avoids a round-trip 403 and makes
+// the UI reflect the same permission model the API already enforces.
+const ADMIN_MANAGER_ONLY_IDS = ["medicine-form", "supplier-form", "po-form"];
+
+function applyRoleVisibility(role) {
+  const isAdminOrManager = role === "admin" || role === "manager";
+  ADMIN_MANAGER_ONLY_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const wrapper = el.closest(".card") || el;
+    if (isAdminOrManager) {
+      wrapper.style.display = "";
+    } else {
+      wrapper.style.display = "none";
+      const note = document.createElement("p");
+      note.className = "role-restricted-note";
+      note.style.color = "var(--muted)";
+      note.style.fontSize = "0.85rem";
+      note.textContent = "Only Admin and Manager roles can perform this action.";
+      if (!wrapper.nextElementSibling || !wrapper.nextElementSibling.classList.contains("role-restricted-note")) {
+        wrapper.insertAdjacentElement("afterend", note);
+      }
+    }
+  });
 }
 
 function flash(elId, message, type = "success") {
@@ -30,7 +83,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   errEl.textContent = "";
   try {
     const data = await api.login(username, password);
-    setSession(data.access_token, data.role, data.username);
+    setSession(data.access_token, data.refresh_token, data.role, data.username);
     showApp();
   } catch (err) {
     errEl.textContent = err.message;
@@ -87,12 +140,20 @@ async function loadDashboard() {
 }
 
 // ---------- Medicines ----------
-async function loadMedicines() {
+let _medicinesSkip = 0;
+const MEDICINES_PAGE_SIZE = 50;
+
+async function loadMedicines(reset = true) {
   const tbody = document.querySelector("#medicines-table tbody");
-  tbody.innerHTML = "<tr><td colspan='6'>Loading...</td></tr>";
+  if (reset) {
+    _medicinesSkip = 0;
+    tbody.innerHTML = "<tr><td colspan='7'>Loading...</td></tr>";
+    window._medicineCache = [];
+  }
   try {
-    const meds = await api.listMedicines(document.getElementById("medicine-search").value.trim());
-    tbody.innerHTML = meds.map((m) => `
+    const search = document.getElementById("medicine-search").value.trim();
+    const meds = await api.listMedicines(search, _medicinesSkip, MEDICINES_PAGE_SIZE);
+    const rowsHtml = meds.map((m) => `
       <tr>
         <td>${m.name}</td>
         <td>${m.generic_name || "-"}</td>
@@ -100,11 +161,34 @@ async function loadMedicines() {
         <td>₹${m.unit_price.toFixed(2)}</td>
         <td>${m.total_stock}${m.total_stock <= m.reorder_level ? ' <span class="badge medium">low</span>' : ""}</td>
         <td><button class="btn secondary" onclick="viewBatches(${m.id}, '${m.name.replace(/'/g, "")}')">Batches</button></td>
-      </tr>`).join("") || "<tr><td colspan='6'>No medicines found.</td></tr>";
-    window._medicineCache = meds;
+        <td><button class="btn secondary" onclick="showSubstitutes(${m.id})">Substitutes</button></td>
+      </tr>`).join("");
+
+    if (reset) {
+      tbody.innerHTML = rowsHtml || "<tr><td colspan='7'>No medicines found.</td></tr>";
+      window._medicineCache = meds;
+    } else {
+      tbody.insertAdjacentHTML("beforeend", rowsHtml);
+      window._medicineCache = window._medicineCache.concat(meds);
+    }
+
+    document.getElementById("medicines-load-more").style.display = meds.length === MEDICINES_PAGE_SIZE ? "inline-block" : "none";
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan='6'>${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan='7'>${err.message}</td></tr>`;
   }
+}
+
+document.getElementById("medicines-load-more").addEventListener("click", () => {
+  _medicinesSkip += MEDICINES_PAGE_SIZE;
+  loadMedicines(false);
+});
+
+function exportMedicinesCsv() {
+  const meds = window._medicineCache || [];
+  exportArrayAsCsv(meds.map((m) => ({
+    name: m.name, generic_name: m.generic_name, category: m.category,
+    unit_price: m.unit_price, total_stock: m.total_stock, reorder_level: m.reorder_level,
+  })), "medicines.csv");
 }
 
 document.getElementById("medicine-search").addEventListener("input", () => loadMedicines());
@@ -129,6 +213,25 @@ document.getElementById("medicine-form").addEventListener("submit", async (e) =>
     flash("medicine-msg", err.message, "error");
   }
 });
+
+async function showSubstitutes(medicineId) {
+  const box = document.getElementById("substitutes-result");
+  box.style.display = "block";
+  box.className = "msg-box success";
+  box.textContent = "Looking up substitutes...";
+  try {
+    const result = await api.substitutes(medicineId);
+    if (result.substitutes.length === 0) {
+      box.textContent = `No substitutes found in the catalog for ${result.medicine}.`;
+    } else {
+      box.textContent = `Substitutes for ${result.medicine}: ` +
+        result.substitutes.map((s) => `${s.name}${s.generic_name ? " (" + s.generic_name + ")" : ""}`).join(", ");
+    }
+  } catch (err) {
+    box.className = "msg-box error";
+    box.textContent = err.message;
+  }
+}
 
 async function viewBatches(medicineId, name) {
   document.getElementById("batch-medicine-id").value = medicineId;
@@ -189,6 +292,35 @@ async function loadPrescriptions() {
     tbody.innerHTML = `<tr><td colspan='4'>${err.message}</td></tr>`;
   }
 }
+
+document.getElementById("extract-text-btn").addEventListener("click", async () => {
+  const fileInput = document.getElementById("prescription-image");
+  const file = fileInput.files[0];
+  if (!file) {
+    flash("ocr-msg", "Choose an image file first.", "error");
+    return;
+  }
+  const btn = document.getElementById("extract-text-btn");
+  btn.disabled = true;
+  btn.textContent = "Reading image...";
+  try {
+    const result = await api.extractText(file);
+    const box = document.getElementById("prescription-text");
+    box.value = result.extracted_text
+      ? result.extracted_text
+      : "";
+    if (!result.extracted_text) {
+      flash("ocr-msg", "OCR ran but found no readable text. Try a clearer image, or type the prescription manually.", "error");
+    } else {
+      flash("ocr-msg", "Text extracted from image. Review and edit below before processing.", "success");
+    }
+  } catch (err) {
+    flash("ocr-msg", err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Extract Text from Image";
+  }
+});
 
 document.getElementById("prescription-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -447,6 +579,8 @@ async function loadReports() {
 async function runReport(type) {
   document.querySelectorAll("#reports-tabs button").forEach((b) => b.classList.remove("active"));
   document.getElementById(`report-tab-${type}`).classList.add("active");
+  window._lastReportType = type;
+  window._lastReportRows = [];
 
   const box = document.getElementById("report-output");
   box.innerHTML = "<p>Loading...</p>";
@@ -455,29 +589,45 @@ async function runReport(type) {
     if (type === "fast-moving") {
       const data = await api.reportFastMoving();
       html = renderTable(["Medicine", "Total Sold (30d)"], data.map((d) => [d.name, d.total_sold]));
+      window._lastReportRows = data;
     } else if (type === "dead-stock") {
       const data = await api.reportDeadStock();
       html = renderTable(["Medicine", "Current Stock"], data.map((d) => [d.name, d.current_stock]));
+      window._lastReportRows = data;
     } else if (type === "expiry-loss") {
       const data = await api.reportExpiryLoss();
       html = `<p><strong>Total estimated loss: ₹${data.total_estimated_loss.toFixed(2)}</strong></p>` +
         renderTable(["Batch", "Medicine ID", "Qty", "Expiry", "Loss"],
           data.batches.map((b) => [b.batch_number, b.medicine_id, b.quantity, b.expiry_date, `₹${b.estimated_loss.toFixed(2)}`]));
+      window._lastReportRows = data.batches;
     } else if (type === "daily-sales") {
       const data = await api.reportDailySales();
       html = `<div class="stats-row">
         <div class="stat-box"><div class="num">${data.invoice_count}</div><div class="label">Invoices Today</div></div>
         <div class="stat-box"><div class="num">₹${data.total_sales.toFixed(2)}</div><div class="label">Total Sales Today</div></div>
       </div>`;
+      window._lastReportRows = [data];
     } else if (type === "reorder-needs") {
       const data = await api.reportReorderNeeds();
       html = renderTable(["Medicine", "Current Stock", "Reorder Level", "Projected Demand (30d)"],
         data.map((d) => [d.name, d.current_stock, d.reorder_level, d.projected_demand_next_30_days]));
+      window._lastReportRows = data;
+    } else if (type === "pharmacist-workload") {
+      const data = await api.reportPharmacistWorkload();
+      html = renderTable(["Staff", "Role", "Prescriptions", "Invoices", "Purchase Orders", "Total Activity"],
+        data.staff.map((w) => [w.username, w.role, w.prescriptions_processed, w.invoices_generated, w.purchase_orders_created, w.total_activity]));
+      if (data.staff.length === 0) html = "<p>No staff activity recorded in the last 30 days yet.</p>";
+      window._lastReportRows = data.staff;
     }
     box.innerHTML = html || "<p>No data available.</p>";
   } catch (err) {
     box.innerHTML = `<p class="msg-box error">${err.message}</p>`;
   }
+}
+
+function exportCurrentReportCsv() {
+  const type = window._lastReportType || "report";
+  exportArrayAsCsv(window._lastReportRows, `${type}.csv`);
 }
 
 function renderTable(headers, rows) {

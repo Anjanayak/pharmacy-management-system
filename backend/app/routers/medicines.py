@@ -26,6 +26,8 @@ def _with_stock(db: Session, medicine: models.Medicine) -> schemas.MedicineOut:
 def list_medicines(
     search: Optional[str] = None,
     category: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -37,7 +39,8 @@ def list_medicines(
         )
     if category:
         query = query.filter(models.Medicine.category == category)
-    medicines = query.order_by(models.Medicine.name).all()
+    limit = max(1, min(limit, 200))
+    medicines = query.order_by(models.Medicine.name).offset(max(0, skip)).limit(limit).all()
     return [_with_stock(db, m) for m in medicines]
 
 

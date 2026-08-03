@@ -4,7 +4,10 @@ from sqlalchemy.orm import Session
 
 from .. import schemas, models
 from ..database import get_db
-from ..auth import hash_password, verify_password, create_access_token, get_current_user, require_roles
+from ..auth import (
+    hash_password, verify_password, create_access_token, create_refresh_token,
+    decode_refresh_token, get_current_user, require_roles,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -37,8 +40,23 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is disabled")
 
-    token = create_access_token({"sub": user.username, "role": user.role.value})
-    return schemas.Token(access_token=token, role=user.role, username=user.username)
+    access_token = create_access_token({"sub": user.username, "role": user.role.value})
+    refresh_token = create_refresh_token({"sub": user.username})
+    return schemas.Token(access_token=access_token, refresh_token=refresh_token, role=user.role, username=user.username)
+
+
+@router.post("/refresh", response_model=schemas.Token)
+def refresh(payload: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    """Exchanges a valid, unexpired refresh token for a new access + refresh
+    token pair, without requiring the user to log in again with a password."""
+    username = decode_refresh_token(payload.refresh_token)
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or disabled")
+
+    access_token = create_access_token({"sub": user.username, "role": user.role.value})
+    refresh_token = create_refresh_token({"sub": user.username})
+    return schemas.Token(access_token=access_token, refresh_token=refresh_token, role=user.role, username=user.username)
 
 
 @router.get("/me", response_model=schemas.UserOut)
