@@ -30,7 +30,7 @@ def create_supplier(
 
 @router.get("/{supplier_id}", response_model=schemas.SupplierOut)
 def get_supplier(supplier_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    supplier = db.query(models.Supplier).get(supplier_id)
+    supplier = db.get(models.Supplier, supplier_id)
     if not supplier:
         raise HTTPException(404, "Supplier not found")
     return supplier
@@ -51,7 +51,7 @@ def create_purchase_order(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager)),
 ):
-    supplier = db.query(models.Supplier).get(payload.supplier_id)
+    supplier = db.get(models.Supplier, payload.supplier_id)
     if not supplier:
         raise HTTPException(404, "Supplier not found")
 
@@ -88,7 +88,7 @@ def receive_purchase_order(
     expiry dates) should be done via POST /api/medicines/batches per item,
     since real-world receipts need per-item batch/expiry info from the
     supplier's delivery note."""
-    po = db.query(models.PurchaseOrder).get(po_id)
+    po = db.get(models.PurchaseOrder, po_id)
     if not po:
         raise HTTPException(404, "Purchase order not found")
     po.status = models.POStatus.received
@@ -103,7 +103,7 @@ def cancel_purchase_order(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager)),
 ):
-    po = db.query(models.PurchaseOrder).get(po_id)
+    po = db.get(models.PurchaseOrder, po_id)
     if not po:
         raise HTTPException(404, "Purchase order not found")
     po.status = models.POStatus.cancelled

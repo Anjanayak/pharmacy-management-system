@@ -59,7 +59,7 @@ def create_medicine(
 
 @router.get("/{medicine_id}", response_model=schemas.MedicineOut)
 def get_medicine(medicine_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    medicine = db.query(models.Medicine).get(medicine_id)
+    medicine = db.get(models.Medicine, medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
     return _with_stock(db, medicine)
@@ -72,7 +72,7 @@ def update_medicine(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager)),
 ):
-    medicine = db.query(models.Medicine).get(medicine_id)
+    medicine = db.get(models.Medicine, medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
     for key, value in payload.model_dump().items():
@@ -88,7 +88,7 @@ def deactivate_medicine(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin)),
 ):
-    medicine = db.query(models.Medicine).get(medicine_id)
+    medicine = db.get(models.Medicine, medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
     medicine.is_active = False
@@ -108,7 +108,7 @@ def add_batch(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager, models.UserRole.staff)),
 ):
-    medicine = db.query(models.Medicine).get(payload.medicine_id)
+    medicine = db.get(models.Medicine, payload.medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
 

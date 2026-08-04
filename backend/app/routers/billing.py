@@ -52,8 +52,8 @@ def create_invoice(
     line_records = []
 
     for item in payload.items:
-        medicine = db.query(models.Medicine).get(item.medicine_id)
-        batch = db.query(models.Batch).get(item.batch_id)
+        medicine = db.get(models.Medicine, item.medicine_id)
+        batch = db.get(models.Batch, item.batch_id)
         if not medicine or not batch or batch.medicine_id != medicine.id:
             raise HTTPException(404, f"Medicine/batch mismatch for medicine_id={item.medicine_id}")
         if batch.quantity < item.quantity:
@@ -106,7 +106,7 @@ def create_invoice(
 
 @invoice_router.get("/{invoice_id}", response_model=schemas.InvoiceOut)
 def get_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    invoice = db.query(models.Invoice).get(invoice_id)
+    invoice = db.get(models.Invoice, invoice_id)
     if not invoice:
         raise HTTPException(404, "Invoice not found")
     return invoice
@@ -120,13 +120,13 @@ def return_invoice_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager, models.UserRole.staff)),
 ):
-    line = db.query(models.InvoiceItem).get(invoice_item_id)
+    line = db.get(models.InvoiceItem, invoice_item_id)
     if not line:
         raise HTTPException(404, "Invoice item not found")
     if quantity > line.quantity:
         raise HTTPException(400, "Return quantity exceeds sold quantity")
 
-    batch = db.query(models.Batch).get(line.batch_id)
+    batch = db.get(models.Batch, line.batch_id)
     batch.quantity += quantity
 
     db.add(models.ReturnRecord(invoice_item_id=invoice_item_id, quantity=quantity, reason=reason))

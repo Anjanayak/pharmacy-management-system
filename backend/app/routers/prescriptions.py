@@ -105,7 +105,7 @@ def create_prescription(
 
 @router.get("/{prescription_id}", response_model=schemas.PrescriptionOut)
 def get_prescription(prescription_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    p = db.query(models.Prescription).get(prescription_id)
+    p = db.get(models.Prescription, prescription_id)
     if not p:
         raise HTTPException(404, "Prescription not found")
     return p
@@ -118,7 +118,7 @@ def review_prescription(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager, models.UserRole.staff)),
 ):
-    p = db.query(models.Prescription).get(prescription_id)
+    p = db.get(models.Prescription, prescription_id)
     if not p:
         raise HTTPException(404, "Prescription not found")
     p.status = payload.status

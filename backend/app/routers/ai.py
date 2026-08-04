@@ -21,7 +21,7 @@ def substitutes(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    medicine = db.query(models.Medicine).get(payload.medicine_id)
+    medicine = db.get(models.Medicine, payload.medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
     all_medicines = db.query(models.Medicine).filter(models.Medicine.is_active == True).all()  # noqa: E712
@@ -36,7 +36,7 @@ def demand_forecast(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    medicine = db.query(models.Medicine).get(medicine_id)
+    medicine = db.get(models.Medicine, medicine_id)
     if not medicine:
         raise HTTPException(404, "Medicine not found")
     return ai_service.forecast_demand(db, medicine_id, lookback_days)
@@ -44,7 +44,7 @@ def demand_forecast(
 
 @router.get("/expiry-risk/{batch_id}")
 def expiry_risk(batch_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    batch = db.query(models.Batch).get(batch_id)
+    batch = db.get(models.Batch, batch_id)
     if not batch:
         raise HTTPException(404, "Batch not found")
     return ai_service.predict_expiry_risk(batch)

@@ -11,3 +11,7 @@ pytesseract==0.3.10
 Pillow==10.3.0
 python-multipart==0.0.9
 email-validator==2.1.1
+
+# Test suite dependencies
+pytest==8.2.0
+httpx==0.27.0

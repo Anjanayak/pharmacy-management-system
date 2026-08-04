@@ -100,7 +100,7 @@ Log in with one of the seeded accounts:
 
 - **Medicine catalog** — CRUD with category, dosage form, manufacturer, GST rate, reorder level
 - **Batch-wise inventory** — batch numbers, expiry dates, cost price, stock-in movement logging
-- **Prescription intake + AI assist** — paste/type prescription text → rule-based
+- **Prescription intake + AI assist** — optionally upload a prescription image for offline OCR (Tesseract, no API key/internet needed), or paste/type text directly → rule-based
   extraction of medicine name / dosage / frequency, catalog matching, and
   drug-interaction flagging (see `KNOWN_INTERACTIONS` table — extend freely)
 - **Billing** — multi-item invoices, automatic per-batch stock deduction, GST calculation,
@@ -148,12 +148,41 @@ pharmacy-system/
         └── app.js             # views, forms, rendering
 ```
 
-## 6. Next steps toward the full brief
+## 7. Running the automated test suite
 
-The original project spec also calls for: OCR on scanned images (currently
-text-in, AI-out — wire in `pytesseract` + an image upload endpoint), a RAG
-chatbot over pharmacy SOPs (add `chromadb`/`pinecone` + LangChain and a new
-`/api/ai/chat` route), CI/CD via GitHub Actions, and AWS deployment. The
-architecture here (routers + services + models) is deliberately structured so
-each of those can be added as a new router/service without refactoring
+The backend ships with a pytest suite (`backend/tests/`) covering auth/RBAC,
+refresh tokens, medicines/batches/pagination, billing (including atomic
+stock-deduction and insufficient-stock rejection), prescriptions/AI parsing,
+drug-interaction detection, substitute suggestions, the alert-scan engine,
+and all six reports. It runs against a disposable SQLite database — no
+PostgreSQL or Docker required to run tests, though running them inside the
+container works too since `pytest`/`httpx` are already in requirements.txt.
+
+**From inside the running container (simplest, no local Python needed):**
+```bash
+docker exec -it pharmacy_backend pytest
+```
+
+**Locally, if you have Python 3.11 set up:**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pytest
+```
+
+Each test function gets a freshly created and torn-down schema for full
+isolation, so tests can run in any order and don't depend on the seed data.
+
+## 8. Next steps toward the full brief
+
+The original project spec also calls for: a real LLM swap-in for the AI
+layer (currently rule-based/offline — the seam is `backend/app/services/ai_service.py`),
+a RAG chatbot over pharmacy SOPs (add `chromadb`/`pinecone` + LangChain and a new
+`/api/ai/chat` route), CI/CD via GitHub Actions, and AWS deployment. Prescription
+OCR is now implemented offline via Tesseract (`POST /api/prescriptions/extract-text`),
+and an automated pytest suite now covers the core backend (see Section 7).
+The architecture here (routers + services + models) is deliberately structured so
+each remaining item can be added as a new router/service without refactoring
 existing code.

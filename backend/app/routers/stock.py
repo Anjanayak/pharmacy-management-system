@@ -36,7 +36,7 @@ def adjust_stock(
 ):
     """Manual correction (damage, audit mismatch, etc). Positive quantity
     adds stock back, negative removes it."""
-    batch = db.query(models.Batch).get(payload.batch_id)
+    batch = db.get(models.Batch, payload.batch_id)
     if not batch or batch.medicine_id != payload.medicine_id:
         raise HTTPException(404, "Batch not found for this medicine")
 
@@ -136,7 +136,7 @@ def resolve_alert(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_roles(models.UserRole.admin, models.UserRole.manager, models.UserRole.staff)),
 ):
-    alert = db.query(models.Alert).get(alert_id)
+    alert = db.get(models.Alert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
     alert.resolved = True
@@ -159,7 +159,7 @@ def fast_moving_medicines(days: int = 30, db: Session = Depends(get_db), current
     )
     result = []
     for medicine_id, total_sold in rows:
-        med = db.query(models.Medicine).get(medicine_id)
+        med = db.get(models.Medicine, medicine_id)
         result.append({"medicine_id": medicine_id, "name": med.name if med else "Unknown", "total_sold": int(total_sold)})
     return result
 
