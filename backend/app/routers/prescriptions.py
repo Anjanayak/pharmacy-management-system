@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import schemas, models
 from ..database import get_db
 from ..auth import get_current_user, require_roles
-from ..services import ai_service
+from ..services import ai_service, llm_service
 
 router = APIRouter(prefix="/api/prescriptions", tags=["Prescriptions"])
 
@@ -80,9 +80,50 @@ def create_prescription(
     db.flush()
 
     catalog = db.query(models.Medicine).filter(models.Medicine.is_active == True).all()  # noqa: E712
-    extracted_items = ai_service.parse_prescription_text(payload.raw_text, catalog)
 
-    interaction_hits = ai_service.check_drug_interactions([item["extracted_name"] for item in extracted_items])
+    if llm_service.is_configured():
+        try:
+            llm_items = llm_service.parse_prescription_text_llm(payload.raw_text)
+            # Re-run catalog matching locally (same logic as the rule-based
+            # path) so behavior is consistent regardless of extraction source.
+            extracted_items = []
+            for item in llm_items:
+                name = item.get("extracted_name", "")
+                matched = None
+                norm = name.strip().lower()
+                for med in catalog:
+                    candidates = [med.name.lower()] + ([med.generic_name.lower()] if med.generic_name else [])
+                    if any(c and (c in norm or norm in c) for c in candidates):
+                        matched = med
+                        break
+                extracted_items.append({
+                    "extracted_name": name,
+                    "matched_medicine_id": matched.id if matched else None,
+                    "dosage": item.get("dosage"),
+                    "frequency": item.get("frequency"),
+                    "warning_flag": None if matched else "No exact catalog match - please verify manually",
+                })
+
+            llm_hits = llm_service.check_drug_interactions_llm(
+                [item["extracted_name"] for item in extracted_items]
+            )
+            interaction_hits = [
+                {"medicines": h.get("medicines", []), "message": h.get("message", "")}
+                for h in llm_hits
+            ]
+        except llm_service.LLMServiceError:
+            # Network hiccup, expired key, rate limit, etc. — fall back to the
+            # offline rule-based layer rather than failing the whole request.
+            extracted_items = ai_service.parse_prescription_text(payload.raw_text, catalog)
+            interaction_hits = ai_service.check_drug_interactions(
+                [item["extracted_name"] for item in extracted_items]
+            )
+    else:
+        extracted_items = ai_service.parse_prescription_text(payload.raw_text, catalog)
+        interaction_hits = ai_service.check_drug_interactions(
+            [item["extracted_name"] for item in extracted_items]
+        )
+
     interaction_summary = "; ".join(f"{h['medicines']}: {h['message']}" for h in interaction_hits) or None
 
     for item in extracted_items:

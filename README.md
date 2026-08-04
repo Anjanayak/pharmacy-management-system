@@ -121,6 +121,29 @@ Everything AI-related lives in `backend/app/services/ai_service.py`. Each functi
 to OpenAI/Anthropic/a LangChain pipeline (e.g. real OCR + NER for prescriptions, a
 vector-store-backed RAG chatbot over your SOPs) without changing any router.
 
+**This is now implemented as an optional, opt-in path** using Groq's free,
+OpenAI-compatible API (`backend/app/services/llm_service.py`). To enable it:
+
+1. Get a free API key from [console.groq.com](https://console.groq.com) → API Keys.
+2. In the project root (same folder as `docker-compose.yml`), copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+3. Open `.env` and paste your key:
+   ```
+   GROQ_API_KEY=gsk_your_key_here
+   ```
+4. Rebuild: `docker-compose down -v && docker-compose up --build`.
+
+That's it — `POST /api/prescriptions` will now use the real LLM for medicine/dosage/frequency
+extraction and drug-interaction checking instead of the rule-based engine. Catalog
+matching still happens locally against your own medicine data either way. If the
+API call ever fails (bad key, rate limit, network issue), the app automatically
+falls back to the offline rule-based layer for that request rather than erroring out.
+
+Leaving `.env` unset (or not creating it at all) keeps the app on the free,
+offline rule-based layer — this is the default and needs no setup.
+
 ## 5. Project structure
 
 ```
@@ -148,7 +171,7 @@ pharmacy-system/
         └── app.js             # views, forms, rendering
 ```
 
-## 7. Running the automated test suite
+## 6. Running the automated test suite
 
 The backend ships with a pytest suite (`backend/tests/`) covering auth/RBAC,
 refresh tokens, medicines/batches/pagination, billing (including atomic
@@ -175,7 +198,7 @@ pytest
 Each test function gets a freshly created and torn-down schema for full
 isolation, so tests can run in any order and don't depend on the seed data.
 
-## 8. Next steps toward the full brief
+## 7. Next steps toward the full brief
 
 The original project spec also calls for: a real LLM swap-in for the AI
 layer (currently rule-based/offline — the seam is `backend/app/services/ai_service.py`),
