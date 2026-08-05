@@ -278,18 +278,31 @@ document.getElementById("batch-form").addEventListener("submit", async (e) => {
 // ---------- Prescriptions ----------
 async function loadPrescriptions() {
   const tbody = document.querySelector("#prescriptions-table tbody");
-  tbody.innerHTML = "<tr><td colspan='4'>Loading...</td></tr>";
+  tbody.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
   try {
     const list = await api.listPrescriptions();
     tbody.innerHTML = list.map((p) => `
       <tr>
         <td>#${p.id}</td>
         <td>${p.created_at.substring(0, 16).replace("T", " ")}</td>
-        <td>${p.status}</td>
+        <td><span class="badge ${p.status === "approved" ? "low" : p.status === "rejected" ? "high" : "medium"}">${p.status}</span></td>
         <td>${p.items.map((it) => `${it.extracted_name}${it.dosage ? " " + it.dosage : ""}${it.frequency ? " (" + it.frequency + ")" : ""}${it.warning_flag ? ` <span class="badge medium">⚠ ${it.warning_flag}</span>` : ""}`).join("<br>")}</td>
-      </tr>`).join("") || "<tr><td colspan='4'>No prescriptions yet.</td></tr>";
+        <td>${p.status === "pending_review" ? `
+          <button class="btn secondary" onclick="reviewPrescriptionAction(${p.id}, 'approved')">Approve</button>
+          <button class="btn secondary" onclick="reviewPrescriptionAction(${p.id}, 'rejected')">Reject</button>
+        ` : "-"}</td>
+      </tr>`).join("") || "<tr><td colspan='5'>No prescriptions yet.</td></tr>";
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan='4'>${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan='5'>${err.message}</td></tr>`;
+  }
+}
+
+async function reviewPrescriptionAction(id, status) {
+  try {
+    await api.reviewPrescription(id, status);
+    loadPrescriptions();
+  } catch (err) {
+    flash("prescription-msg", err.message, "error");
   }
 }
 

@@ -87,21 +87,44 @@ def parse_prescription_text_llm(raw_text: str) -> List[Dict]:
 def check_drug_interactions_llm(medicine_names: List[str]) -> List[Dict]:
     """
     LLM equivalent of ai_service.check_drug_interactions. Asks the model for
-    clinically known interactions among the given medicine names, rather than
-    checking against the small static KNOWN_INTERACTIONS table.
+    clinically known interactions strictly between pairs of medicines that
+    are BOTH present in the given list, rather than checking against the
+    small static KNOWN_INTERACTIONS table.
     """
+    if len(medicine_names) < 2:
+        # No pair possible — skip the call entirely rather than let the
+        # model report general-knowledge interactions with drugs that
+        # aren't actually part of this prescription.
+        return []
+
     system_prompt = (
-        "You are a pharmacology assistant. Given a list of medicine names, "
-        "identify any well-known, clinically significant drug-drug interactions "
-        "among them. Respond ONLY with JSON in this exact shape: "
-        '{"interactions": [{"medicines": ["...", "..."], "severity": "low|medium|high", '
-        '"message": "short explanation"}]}. If there are no known interactions, '
-        'respond with {"interactions": []}. Do not guess at interactions you are not '
-        "reasonably confident about."
+        "You are a pharmacology assistant. You will be given a specific list of "
+        "medicine names that were prescribed TOGETHER. Identify only interactions "
+        "that occur BETWEEN TWO OR MORE MEDICINES THAT ARE BOTH PRESENT IN THE GIVEN "
+        "LIST. Do NOT report an interaction with any medicine that is not explicitly "
+        "in the provided list, even if it is a well-known interaction in general — "
+        "the list may contain only one medicine with no interactions to report, and "
+        "that is a valid, expected outcome. Respond ONLY with JSON in this exact "
+        'shape: {"interactions": [{"medicines": ["exact name from the list", "exact '
+        'name from the list"], "severity": "low|medium|high", "message": "short '
+        'explanation"}]}. If there are no interactions among the given medicines, '
+        'respond with {"interactions": []}.'
     )
-    user_content = "Medicines: " + ", ".join(medicine_names)
+    user_content = "Medicines prescribed together: " + ", ".join(medicine_names)
     data = _call_groq(system_prompt, user_content)
     hits = data.get("interactions", [])
     if not isinstance(hits, list):
         raise LLMServiceError("Groq API 'interactions' field was not a list")
-    return hits
+
+    # Defensive filter: even if the model ignores the instruction above, only
+    # keep hits where every mentioned medicine is actually in the input list.
+    normalized_input = {name.strip().lower() for name in medicine_names}
+    safe_hits = []
+    for hit in hits:
+        mentioned = hit.get("medicines", [])
+        if mentioned and all(
+            any(m.strip().lower() in n or n in m.strip().lower() for n in normalized_input)
+            for m in mentioned
+        ):
+            safe_hits.append(hit)
+    return safe_hits
